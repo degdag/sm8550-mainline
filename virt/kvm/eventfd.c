@@ -33,6 +33,24 @@
 
 static struct workqueue_struct *irqfd_cleanup_wq;
 
+struct kvm_kernel_irqfd __attribute__((weak))
+*kvm_arch_irqfd_alloc(void)
+{
+	return kzalloc(sizeof(struct kvm_kernel_irqfd), GFP_KERNEL_ACCOUNT);
+}
+
+void __attribute__((weak))
+kvm_arch_irqfd_free(struct kvm_kernel_irqfd *irqfd)
+{
+	kfree(irqfd);
+}
+
+int __attribute__((weak))
+kvm_arch_irqfd_init(struct kvm_kernel_irqfd *irqfd)
+{
+	return 0;
+}
+
 bool __attribute__((weak))
 kvm_arch_irqfd_allowed(struct kvm *kvm, struct kvm_irqfd *args)
 {
@@ -154,7 +172,7 @@ irqfd_shutdown(struct work_struct *work)
 	irq_bypass_unregister_consumer(&irqfd->consumer);
 #endif
 	eventfd_ctx_put(irqfd->eventfd);
-	kfree(irqfd);
+	kvm_arch_irqfd_free(irqfd);
 }
 
 
@@ -383,7 +401,11 @@ kvm_irqfd_assign(struct kvm *kvm, struct kvm_irqfd *args)
 	if (!kvm_arch_irqfd_allowed(kvm, args))
 		return -EINVAL;
 
+<<<<<<< HEAD
 	irqfd = kzalloc_obj(*irqfd, GFP_KERNEL_ACCOUNT);
+=======
+	irqfd = kvm_arch_irqfd_alloc();
+>>>>>>> 8cfba3931282 (KVM: irqfd: Add architecture hooks for irqfd allocation and initialization)
 	if (!irqfd)
 		return -ENOMEM;
 
@@ -466,6 +488,31 @@ kvm_irqfd_assign(struct kvm *kvm, struct kvm_irqfd *args)
 	 * also prevents irqfd_shutdown() from freeing the irqfd before it's
 	 * fully initialized.
 	 */
+<<<<<<< HEAD
+=======
+	init_waitqueue_func_entry(&irqfd->wait, irqfd_wakeup);
+	init_poll_funcptr(&irqfd->pt, irqfd_ptable_queue_proc);
+
+	/*
+	 * Give a chance to archiectures to finish initilization.
+	 * E.g. Gunyah needs to register a resource ticket for this irq.
+	 */
+	if (kvm_arch_irqfd_init(irqfd))
+		goto fail;
+
+	spin_lock_irq(&kvm->irqfds.lock);
+
+	ret = 0;
+	list_for_each_entry(tmp, &kvm->irqfds.items, list) {
+		if (irqfd->eventfd != tmp->eventfd)
+			continue;
+		/* This fd is used for another irq already. */
+		ret = -EBUSY;
+		spin_unlock_irq(&kvm->irqfds.lock);
+		goto fail;
+	}
+
+>>>>>>> 8cfba3931282 (KVM: irqfd: Add architecture hooks for irqfd allocation and initialization)
 	idx = srcu_read_lock(&kvm->irq_srcu);
 
 	/*
@@ -516,7 +563,7 @@ fail:
 		eventfd_ctx_put(eventfd);
 
 out:
-	kfree(irqfd);
+	kvm_arch_irqfd_free(irqfd);
 	return ret;
 }
 
