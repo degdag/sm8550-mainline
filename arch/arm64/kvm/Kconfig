@@ -17,8 +17,25 @@ menuconfig VIRTUALIZATION
 
 if VIRTUALIZATION
 
+###################### Gunyah-based KVM ######################
+menuconfig KVM
+	bool "Kernel-based Virtual Machine (KVM) under Gunyah"
+	depends on GUNYAH
+	select KVM_COMMON
+	select KVM_GENERIC_MMU_NOTIFIER
+	select KVM_MMIO
+	select HAVE_KVM_IRQCHIP
+	select HAVE_KVM_READONLY_MEM
+
+###################### Native ARM KVM ######################
+config KVM_ARM
+	bool
+	depends on !GUNYAH
+
 menuconfig KVM
 	bool "Kernel-based Virtual Machine (KVM) support"
+	depends on !GUNYAH
+	select KVM_ARM
 	select KVM_COMMON
 	select KVM_GENERIC_HARDWARE_ENABLING
 	select HAVE_KVM_CPU_RELAX_INTERCEPT
@@ -42,7 +59,7 @@ menuconfig KVM
 
 	  If unsure, say N.
 
-if KVM
+if KVM_ARM
 
 config PTDUMP_STAGE2_DEBUGFS
 	bool "Present the stage-2 pagetables to debugfs"
@@ -103,5 +120,5 @@ config PKVM_STACKTRACE
 	  If unsure, or not using protected nVHE (pKVM), say N.
 
 endif # NVHE_EL2_DEBUG
-endif # KVM
+endif # KVM_ARM
 endif # VIRTUALIZATION

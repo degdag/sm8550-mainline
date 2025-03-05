@@ -3756,6 +3756,9 @@ static void verify_sme_features(void)
 	cpacr_restore(cpacr);
 }
 
+#ifndef CONFIG_KVM_ARM
+static void verify_hyp_capabilities(void) { }
+#else
 static void verify_hyp_capabilities(void)
 {
 	u64 safe_mmfr1, mmfr0, mmfr1;
@@ -3786,6 +3789,7 @@ static void verify_hyp_capabilities(void)
 		cpu_die_early();
 	}
 }
+#endif
 
 static void verify_mpam_capabilities(void)
 {

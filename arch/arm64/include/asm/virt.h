@@ -88,11 +88,18 @@ bool is_kvm_arm_initialised(void);
 
 DECLARE_STATIC_KEY_FALSE(kvm_protected_mode_initialized);
 
+#ifndef CONFIG_KVM_ARM
+static inline bool is_pkvm_initialized(void)
+{
+	return false;
+}
+#else
 static inline bool is_pkvm_initialized(void)
 {
 	return IS_ENABLED(CONFIG_KVM) &&
 	       static_branch_likely(&kvm_protected_mode_initialized);
 }
+#endif
 
 #ifdef CONFIG_KVM
 bool pkvm_force_reclaim_guest_page(phys_addr_t phys);
