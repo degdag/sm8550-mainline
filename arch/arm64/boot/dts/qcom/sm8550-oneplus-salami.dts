@@ -128,7 +128,7 @@
 		};
 	};
 	
-	reserved-memory {
+		reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
@@ -143,7 +143,22 @@
 			reg = <0x00 0x80a00000 0x00 0x400000>;
 		};
 
-		/* merged xbl_dt_log, xbl_ramdump, aop_image */
+		/* --- ADD THESE THREE HYP LOG WINDOWS HERE --- */
+		hyp_tags_mem: hyp-tags-region@80e00000 {
+			no-map;
+			reg = <0 0x80e00000 0 0x3d0000>;
+		};
+
+		hyp_tags_reserved_mem: hyp-tags-reserved-region@811d0000 {
+			no-map;
+			reg = <0 0x811d0000 0 0x30000>;
+		};
+
+		global_sync_mem: global-sync-region@82600000 {
+			no-map;
+			reg = <0 0x82600000 0 0x100000>;
+		};
+
 		xbl_dt_log_merged_mem: xbl-dt-log-merged-region@81a00000 {
 			no-map;
 			reg = <0x00 0x81a00000 0x00 0x260000>;
@@ -155,7 +170,6 @@
 			reg = <0x00 0x81c60000 0x00 0x20000>;
 		};
 
-		/* merged aop_config, tme_crash_dump, tme_log, uefi_log */
 		aop_config_merged_mem: aop-config-merged-region@81c80000 {
 			no-map;
 			reg = <0x00 0x81c80000 0x00 0x74000>;
@@ -166,7 +180,6 @@
 			reg = <0x00 0x81cf4000 0x00 0x1000>;
 		};
 
-		/* secdata region can be reused by apps */
 		smem: smem@81d00000 {
 			no-map;
 			reg = <0x00 0x81d00000 0x00 0x200000>;
@@ -208,8 +221,18 @@
 			no-map;
 			reg = <0x00 0x9b09a000 0x00 0x2000>;
 		};
+
+		/* --- ADD THESE TWO SECURE MODEM INTERFACES HERE --- */
+		spu_tz_shared_mem: spu-tz-shared-region@9b280000 {
+			no-map;
+			reg = <0 0x9b280000 0 0x60000>;
+		};
+
+		spu_modem_shared_mem: spu-modem-shared-region@9b2e0000 {
+			no-map;
+			reg = <0 0x9b2e0000 0 0x20000>;
+		};
 		
-		        /* 1. Keep Video Mem untouched */
 		video_mem: video-region@9bb00000 {
 			no-map;
 			reg = <0x00 0x9bb00000 0x00 0x700000>;
@@ -269,6 +292,7 @@
 			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
 		};
 	};
+
 	
 	sound {
 		compatible = "qcom,sm8550-sndcard", "qcom,sm8450-sndcard";
@@ -931,7 +955,7 @@
         reset-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
         
         pinctrl-names = "default";
-	pinctrl-0 = <&ts_int_active &ts_reset_active>;
+		pinctrl-0 = <&ts_int_active &ts_reset_active>;
 
         vdd-supply = <&enable2v8_gpio>;
         vcc-supply = <&vreg_l4b_1p8>;
@@ -1208,12 +1232,8 @@
 
 &swr1 {
 	status = "okay";
-	
-	/* FIXED FOR 7.2: Link the required interface clock mapping lines */
 	clocks = <&lpass_rxmacro>;
 	clock-names = "iface";
-
-	/* Keep your existing child nodes completely intact */
 	wcd_rx: codec@0,4 {
 		compatible = "sdw20217010d00";
 		reg = <0 4>;
@@ -1223,12 +1243,8 @@
 
 &swr2 {
 	status = "okay";
-	
-	/* FIXED FOR 7.2: Link the required interface clock mapping lines */
 	clocks = <&lpass_txmacro>;
 	clock-names = "iface";
-
-	/* Keep your existing child nodes completely intact */
 	wcd_tx: codec@0,3 {
 		compatible = "sdw20217010d00";
 		reg = <0 3>;
@@ -1501,5 +1517,3 @@
 &xo_board {
 	clock-frequency = <76800000>;
 };
-
-
