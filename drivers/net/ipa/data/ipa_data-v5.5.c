@@ -50,13 +50,13 @@ enum ipa_rsrc_group_id {
 /* QSB configuration data for an SoC having IPA v5.5 */
 static const struct ipa_qsb_data ipa_qsb_data[] = {
 	[IPA_QSB_MASTER_DDR] = {
-		.max_writes		= 0,	/* Unlimited */
-		.max_reads		= 12,
+		.max_writes		= 12,	/* Unlimited */
+		.max_reads		= 0,
 		.max_reads_beats	= 0,
 	},
 	[IPA_QSB_MASTER_PCIE] = {
-		.max_writes		= 0,	/* Unlimited */
-		.max_reads		= 8,
+		.max_writes		= 8,	/* Unlimited */
+		.max_reads		= 0,
 		.max_reads_beats	= 0,
 	},
 };
@@ -86,8 +86,8 @@ static const struct ipa_gsi_endpoint_data ipa_gsi_endpoint_data[] = {
 	},
 	[IPA_ENDPOINT_AP_LAN_RX] = {
 		.ee_id		= GSI_EE_AP,
-		.channel_id	= 13,
-		.endpoint_id	= 16,
+		.channel_id	= 14,
+		.endpoint_id	= 17,
 		.toward_ipa	= false,
 		.channel = {
 			.tre_count	= 256,
@@ -446,9 +446,10 @@ static const struct ipa_mem ipa_mem_local_data[] = {
 static const struct ipa_mem_data ipa_mem_data = {
 	.local_count	= ARRAY_SIZE(ipa_mem_local_data),
 	.local		= ipa_mem_local_data,
-	.imem_addr	= 0x14688000,
+	.imem_addr	= 0x146a8000,
 	.imem_size	= 0x00002000,
 	.smem_size	= 0x00009000,
+	.fnr_idx_cnt    = 52,
 };
 
 /* Interconnect rates are in 1000 byte/second units */
