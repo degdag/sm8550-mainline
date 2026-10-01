@@ -426,6 +426,12 @@
 			};
 		};
 	};
+
+	hypervisor {
+		compatible = "qcom,gunyah-hypervisor";
+		#address-cells = <2>;
+		#size-cells = <0>;
+	};
 };
 
 &apps_rsc {
