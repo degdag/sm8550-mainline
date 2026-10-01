@@ -426,11 +426,7 @@ kvm_irqfd_assign(struct kvm *kvm, struct kvm_irqfd *args)
 	if (!kvm_arch_irqfd_allowed(kvm, args))
 		return -EINVAL;
 
-<<<<<<< HEAD
-	irqfd = kzalloc_obj(*irqfd, GFP_KERNEL_ACCOUNT);
-=======
 	irqfd = kvm_arch_irqfd_alloc();
->>>>>>> 8cfba3931282 (KVM: irqfd: Add architecture hooks for irqfd allocation and initialization)
 	if (!irqfd)
 		return -ENOMEM;
 
@@ -504,6 +500,13 @@ kvm_irqfd_assign(struct kvm *kvm, struct kvm_irqfd *args)
 	}
 
 	/*
+	 * Give architectures a chance to finish initialization.
+	 * E.g. Gunyah needs to register a resource ticket for this irq.
+	 */
+	if (kvm_arch_irqfd_init(irqfd))
+		goto fail;
+
+	/*
 	 * Set the irqfd routing and add it to KVM's list before registering
 	 * the irqfd with the eventfd, so that the routing information is valid
 	 * and stays valid, e.g. if there are GSI routing changes, prior to
@@ -513,31 +516,6 @@ kvm_irqfd_assign(struct kvm *kvm, struct kvm_irqfd *args)
 	 * also prevents irqfd_shutdown() from freeing the irqfd before it's
 	 * fully initialized.
 	 */
-<<<<<<< HEAD
-=======
-	init_waitqueue_func_entry(&irqfd->wait, irqfd_wakeup);
-	init_poll_funcptr(&irqfd->pt, irqfd_ptable_queue_proc);
-
-	/*
-	 * Give a chance to archiectures to finish initilization.
-	 * E.g. Gunyah needs to register a resource ticket for this irq.
-	 */
-	if (kvm_arch_irqfd_init(irqfd))
-		goto fail;
-
-	spin_lock_irq(&kvm->irqfds.lock);
-
-	ret = 0;
-	list_for_each_entry(tmp, &kvm->irqfds.items, list) {
-		if (irqfd->eventfd != tmp->eventfd)
-			continue;
-		/* This fd is used for another irq already. */
-		ret = -EBUSY;
-		spin_unlock_irq(&kvm->irqfds.lock);
-		goto fail;
-	}
-
->>>>>>> 8cfba3931282 (KVM: irqfd: Add architecture hooks for irqfd allocation and initialization)
 	idx = srcu_read_lock(&kvm->irq_srcu);
 
 	/*
