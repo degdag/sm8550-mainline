@@ -20,6 +20,19 @@ bool arch_is_gunyah_guest(void)
 	u32 *up;
 
 	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID, &res);
+	{
+		struct arm_smccc_res r;
+		u32 id0 = ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_64,
+					     ARM_SMCCC_OWNER_VENDOR_HYP, 0x0000);
+		u32 id8 = ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_64,
+					     ARM_SMCCC_OWNER_VENDOR_HYP, 0x8000);
+		arm_smccc_1_1_hvc(id0, &r);
+		pr_info("gunyah dbg: hvc fn0000 -> %lx %lx %lx %lx\n", r.a0, r.a1, r.a2, r.a3);
+		arm_smccc_1_1_smc(id0, &r);
+		pr_info("gunyah dbg: smc fn0000 -> %lx %lx %lx %lx\n", r.a0, r.a1, r.a2, r.a3);
+		arm_smccc_1_1_smc(id8, &r);
+		pr_info("gunyah dbg: smc fn8000 -> %lx %lx %lx %lx\n", r.a0, r.a1, r.a2, r.a3);
+	}
 
 	up = (u32 *)&uuid.b[0];
 	up[0] = lower_32_bits(res.a0);
@@ -27,6 +40,9 @@ bool arch_is_gunyah_guest(void)
 	up[2] = lower_32_bits(res.a2);
 	up[3] = lower_32_bits(res.a3);
 
+	if (res.a0 == 0x19bd54bd && res.a1 == 0x0b37571b &&
+	    res.a2 == 0x946f609b && res.a3 == 0x54539de6)
+		return true; /* DEBUG: QC_HYP build */
 	return uuid_equal(&uuid, &GUNYAH_UUID);
 }
 EXPORT_SYMBOL_GPL(arch_is_gunyah_guest);
@@ -36,7 +52,7 @@ EXPORT_SYMBOL_GPL(arch_is_gunyah_guest);
 			   ARM_SMCCC_OWNER_VENDOR_HYP, fn)
 
 /* clang-format off */
-#define GUNYAH_HYPERCALL_HYP_IDENTIFY		GUNYAH_HYPERCALL(0x8000)
+#define GUNYAH_HYPERCALL_HYP_IDENTIFY		GUNYAH_HYPERCALL(0x0000)
 #define GUNYAH_HYPERCALL_BELL_SEND		GUNYAH_HYPERCALL(0x8012)
 #define GUNYAH_HYPERCALL_BELL_SET_MASK		GUNYAH_HYPERCALL(0x8015)
 #define GUNYAH_HYPERCALL_MSGQ_SEND		GUNYAH_HYPERCALL(0x801B)
@@ -55,14 +71,22 @@ EXPORT_SYMBOL_GPL(arch_is_gunyah_guest);
 void gunyah_hypercall_hyp_identify(
 	struct gunyah_hypercall_hyp_identify_resp *hyp_identity)
 {
-	struct arm_smccc_res res;
+	register unsigned long x0 asm("x0") = 0;
+	register unsigned long x1 asm("x1") = 0;
+	register unsigned long x2 asm("x2") = 0;
+	register unsigned long x3 asm("x3") = 0;
 
-	arm_smccc_1_1_hvc(GUNYAH_HYPERCALL_HYP_IDENTIFY, &res);
+	/* This firmware only implements the native hvc #imm convention */
+	asm volatile("hvc #0x6000"
+		     : "+r" (x0), "+r" (x1), "+r" (x2), "+r" (x3)
+		     :
+		     : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12",
+		       "x13", "x14", "x15", "x16", "x17", "memory");
 
-	hyp_identity->api_info = res.a0;
-	hyp_identity->flags[0] = res.a1;
-	hyp_identity->flags[1] = res.a2;
-	hyp_identity->flags[2] = res.a3;
+	hyp_identity->api_info = x0;
+	hyp_identity->flags[0] = x1;
+	hyp_identity->flags[1] = x2;
+	hyp_identity->flags[2] = x3;
 }
 EXPORT_SYMBOL_GPL(gunyah_hypercall_hyp_identify);
 

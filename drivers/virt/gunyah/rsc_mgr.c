@@ -756,7 +756,7 @@ static int gunyah_rm_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	gunyah_rm->parent_fwnode = of_node_to_fwnode(parent_irq_node);
+	gunyah_rm->parent_fwnode = of_fwnode_handle(parent_irq_node);
 	if (!gunyah_rm->parent_fwnode) {
 		dev_err(&pdev->dev,
 			"Failed to find interrupt parent domain of resource manager\n");
