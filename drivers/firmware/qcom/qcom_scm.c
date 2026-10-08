@@ -3,6 +3,8 @@
  * Copyright (C) 2015 Linaro Ltd.
  */
 
+#include <linux/libfdt.h>
+#include <linux/io.h>
 #include <linux/arm-smccc.h>
 #include <linux/bitfield.h>
 #include <linux/bits.h>
@@ -2910,3 +2912,74 @@ subsys_initcall(qcom_scm_init);
 
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. SCM driver");
 MODULE_LICENSE("GPL v2");
+
+static int __init scm_dbg_el2_exit(void)
+{
+	if (__scm && __scm->dev)
+		dev_info(__scm->dev, "dbg: scm svc 0x01 cmd 0x21 available=%d\n",
+			 __qcom_scm_is_call_available(__scm->dev, 0x01, 0x21));
+	return 0;
+}
+late_initcall(scm_dbg_el2_exit);
+
+static int __init scm_dbg_hypinfo(void)
+{
+	struct qcom_scm_desc desc = { .svc = 0x06, .cmd = 0x09, .arginfo = 0,
+				      .owner = ARM_SMCCC_OWNER_SIP };
+	struct qcom_scm_res res = {};
+	u8 *h;
+	u32 cnt, i;
+	int ret;
+
+	if (!__scm || !__scm->dev)
+		return 0;
+	if (!__qcom_scm_is_call_available(__scm->dev, 0x06, 0x09)) {
+		dev_info(__scm->dev, "dbg: hypinfo scm NOT available\n");
+		return 0;
+	}
+	ret = qcom_scm_call(__scm->dev, &desc, &res);
+	dev_info(__scm->dev, "dbg: hypinfo ret=%d res=%llx %llx %llx\n",
+		 ret, res.result[0], res.result[1], res.result[2]);
+	if (ret || !res.result[1])
+		return 0;
+	h = memremap(res.result[1], 0x1000, MEMREMAP_WB);
+	if (!h)
+		return 0;
+	cnt = *(u32 *)(h + 20);
+	dev_info(__scm->dev, "dbg: hypinfo magic=%08x count=%u\n", *(u32 *)h, cnt);
+	if (*(u32 *)h != 0xC06B0071 || cnt > 4)
+		goto out;
+	for (i = 0; i < cnt; i++) {
+		u64 pa = *(u64 *)(h + 24 + 16 * i);
+		u64 x1 = *(u64 *)(h + 32 + 16 * i);
+		void *b, *hdr = memremap(pa, 64, MEMREMAP_WB);
+		int n, len, k;
+
+		dev_info(__scm->dev, "dbg: dtbo %u pa=%llx x1=%llx\n", i, pa, x1);
+		if (!hdr)
+			continue;
+		if (fdt_check_header(hdr) || fdt_totalsize(hdr) > 0x100000) {
+			memunmap(hdr);
+			continue;
+		}
+		b = memremap(pa, fdt_totalsize(hdr), MEMREMAP_WB);
+		memunmap(hdr);
+		if (!b)
+			continue;
+		n = fdt_node_offset_by_compatible(b, -1, "qcom,resource-manager");
+		if (n >= 0) {
+			const fdt32_t *p = fdt_getprop(b, n, "reg", &len);
+
+			for (k = 0; p && k < len / 4; k++)
+				dev_info(__scm->dev, "dbg: dtbo %u rm reg[%d]=%08x\n", i, k, fdt32_to_cpu(p[k]));
+			p = fdt_getprop(b, n, "interrupts", &len);
+			for (k = 0; p && k < len / 4; k++)
+				dev_info(__scm->dev, "dbg: dtbo %u rm irq[%d]=%x\n", i, k, fdt32_to_cpu(p[k]));
+		}
+		memunmap(b);
+	}
+out:
+	memunmap(h);
+	return 0;
+}
+late_initcall(scm_dbg_hypinfo);

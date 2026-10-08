@@ -195,7 +195,17 @@ static bool gunyah_has_qcom_extensions(void)
 	up[2] = lower_32_bits(res.a2);
 	up[3] = lower_32_bits(res.a3);
 
-	return uuid_equal(&uuid, &QCOM_EXT_UUID);
+	if (uuid_equal(&uuid, &QCOM_EXT_UUID))
+		return true;
+
+	/*
+	 * The Qualcomm build on SM8550 answers the standard vendor-hypervisor UID
+	 * query over SMC with the raw words 19bd54bd 0b37571b 946f609b 54539de6,
+	 * which the byte packing above does not match.
+	 */
+	arm_smccc_1_1_smc(ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID, &res);
+	return res.a0 == 0x19bd54bd && res.a1 == 0x0b37571b &&
+	       res.a2 == 0x946f609b && res.a3 == 0x54539de6;
 }
 
 static int __init qcom_gunyah_platform_hooks_register(void)

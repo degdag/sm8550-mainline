@@ -488,8 +488,16 @@ static int gunyah_rm_msgq_send(struct gunyah_rm *rm, size_t size, bool push)
 
 again:
 	wait_for_completion(&rm->send_ready);
+	dev_warn(rm->dev,
+		 "GUNYAH RPC TX: capid=%llu size=%zu flags=0x%x ready_before=%d\\n",
+		 (unsigned long long)rm->tx_ghrsc.capid, size, tx_flags, ready);
+
 	gunyah_error = gunyah_hypercall_msgq_send(rm->tx_ghrsc.capid, size,
 						  data, tx_flags, &ready);
+
+	dev_warn(rm->dev,
+		 "GUNYAH RPC TX RESULT: gunyah_error=%d linux_errno=%d ready_after=%d\\n",
+		 gunyah_error, gunyah_error_remap(gunyah_error), ready);
 
 	/* Should never happen because Linux properly tracks the ready-state of the msgq */
 	if (WARN_ON(gunyah_error == GUNYAH_ERROR_MSGQUEUE_FULL))
@@ -505,6 +513,9 @@ static int gunyah_rm_send_request(struct gunyah_rm *rm, u32 message_id,
 				  const void *req_buf, size_t req_buf_size,
 				  struct gunyah_rm_message *message)
 {
+	dev_warn(rm->dev,
+		 "GUNYAH RPC: msg_id=0x%08x seq=%u req_size=%zu\\n",
+		 message_id, message->reply.seq, req_buf_size);
 	size_t buf_size_remaining = req_buf_size;
 	const void *req_buf_curr = req_buf;
 	struct gunyah_rm_rpc_hdr *hdr =
@@ -551,10 +562,19 @@ static int gunyah_rm_send_request(struct gunyah_rm *rm, u32 message_id,
 
 		/* Only the last message should have push flag set */
 		push = !buf_size_remaining;
+		dev_warn(rm->dev,
+			 "GUNYAH RPC FRAG: msg_id=0x%08x seq=%u payload=%zu push=%d\\n",
+			 message_id, message->reply.seq, payload_size, push);
+
 		ret = gunyah_rm_msgq_send(rm, sizeof(*hdr) + payload_size,
 					  push);
-		if (ret)
+
+		if (ret) {
+			dev_warn(rm->dev,
+				 "GUNYAH RPC SEND FAIL: msg_id=0x%08x seq=%u ret=%d\\n",
+				 message_id, message->reply.seq, ret);
 			break;
+		}
 
 		hdr_template.type =
 			FIELD_PREP(RM_RPC_TYPE_MASK, RM_RPC_TYPE_CONTINUATION) |
@@ -675,12 +695,12 @@ static int gunyah_platform_probe_capability(struct platform_device *pdev,
 {
 	int ret;
 
-	ghrsc->irq = platform_get_irq(pdev, idx);
-	if (ghrsc->irq < 0) {
-		dev_err(&pdev->dev, "Failed to get %s irq: %d\n",
-			idx ? "rx" : "tx", ghrsc->irq);
-		return ghrsc->irq;
+	ret = platform_get_irq(pdev, idx);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to get %s irq: %d\n", idx ? "rx" : "tx", ret);
+		return ret;
 	}
+	ghrsc->irq = ret;
 
 	ret = of_property_read_u64_index(pdev->dev.of_node, "reg", idx,
 					 &ghrsc->capid);
@@ -775,6 +795,7 @@ static int gunyah_rm_probe(struct platform_device *pdev)
 
 static const struct of_device_id gunyah_rm_of_match[] = {
 	{ .compatible = "gunyah-resource-manager" },
+	{ .compatible = "qcom,resource-manager" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, gunyah_rm_of_match);

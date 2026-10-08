@@ -1879,23 +1879,27 @@ static int gunyah_vm_start(struct gunyah_vm *ghvm)
 	}
 
 	ret = gunyah_start_paging(ghvm);
-	if (ret) {
+	if (ret == -EOPNOTSUPP) {
+		pr_warn("gunyah dbg: RM has no demand paging, continuing\n");
+	} else if (ret) {
 		pr_warn("Failed to set up demand paging: %d\n", ret);
 		goto err;
-	}
-
-	ret = gunyah_memory_parcel_to_paged(ghvm, ghvm->dtb.parcel_start,
-			ghvm->dtb.parcel_pages);
-	if (ret) {
-		pr_warn("Failed to set up paging for memparcel: %d\n", ret);
-		goto err;
+	} else {
+		ret = gunyah_memory_parcel_to_paged(ghvm, ghvm->dtb.parcel_start,
+				ghvm->dtb.parcel_pages);
+		if (ret) {
+			pr_warn("Failed to set up paging for memparcel: %d\n", ret);
+			goto err;
+		}
 	}
 
 	ret = gunyah_rm_vm_set_address_layout(
 		ghvm->rm, ghvm->vmid, GUNYAH_RM_RANGE_ID_IMAGE,
 		ghvm->dtb.parcel_start << PAGE_SHIFT,
 		ghvm->dtb.parcel_pages << PAGE_SHIFT);
-	if (ret) {
+	if (ret == -EOPNOTSUPP) {
+		pr_warn("gunyah dbg: RM has no set_address_layout, continuing\n");
+	} else if (ret) {
 		pr_warn("Failed to set location of DTB mem parcel: %d\n", ret);
 		goto err;
 	}
@@ -1919,6 +1923,14 @@ static int gunyah_vm_start(struct gunyah_vm *ghvm)
 		pr_warn("Failed to get hyp resources for VM: %d\n", ret);
 		goto err;
 	}
+
+	/* DEBUG: dump what the RM gave us, then stop before running anything */
+	for (i = 0, n = le32_to_cpu(resources->n_entries); i < n; i++)
+		print_hex_dump(KERN_INFO, "gunyah dbg: res ", DUMP_PREFIX_NONE, 16, 1,
+			       &resources->entries[i], sizeof(resources->entries[i]), false);
+	pr_warn("gunyah dbg: %d hyp resources, stopping before VM_START\n", n);
+	ret = -EOPNOTSUPP;
+	goto err;
 
 	for (i = 0, n = le32_to_cpu(resources->n_entries); i < n; i++) {
 		ghrsc = gunyah_rm_alloc_resource(ghvm->rm,

@@ -426,7 +426,7 @@
 			};
 		};
 	};
-
+	
 	hypervisor {
 		compatible = "qcom,gunyah-hypervisor";
 		#address-cells = <2>;
