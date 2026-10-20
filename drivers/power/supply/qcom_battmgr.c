@@ -531,6 +531,28 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		val->intval = battmgr->status.status;
+		if (battmgr->variant == QCOM_BATTMGR_SM8550) {
+			/*
+			 * SM8550 ADSP firmware can report stale battery
+			 * status across charger transitions. Refresh USB
+			 * state before reconciling the reported status.
+			 */
+			mutex_lock(&battmgr->lock);
+			ret = qcom_battmgr_request_property(battmgr,
+					BATTMGR_USB_PROPERTY_GET, USB_ONLINE, 0);
+			mutex_unlock(&battmgr->lock);
+
+			if (!ret) {
+				if (!battmgr->usb.online &&
+				    !battmgr->wireless.online &&
+				    val->intval == POWER_SUPPLY_STATUS_CHARGING)
+					val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+				else if ((battmgr->usb.online ||
+					  battmgr->wireless.online) &&
+					 val->intval == POWER_SUPPLY_STATUS_DISCHARGING)
+					val->intval = POWER_SUPPLY_STATUS_CHARGING;
+			}
+		}
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		val->intval = battmgr->info.charge_type;
@@ -561,6 +583,11 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		val->intval = battmgr->status.current_now;
+		if (battmgr->variant == QCOM_BATTMGR_SM8550) {
+			/* SM8550 ADSP reports battery current with opposite polarity. */
+			val->intval = -val->intval;
+		}
+
 		break;
 	case POWER_SUPPLY_PROP_POWER_NOW:
 		val->intval = battmgr->status.power_now;
