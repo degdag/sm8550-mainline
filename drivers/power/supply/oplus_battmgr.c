@@ -1206,7 +1206,7 @@ static void battery_chg_update_usb_type_work(struct work_struct *work)
 		if (!bcdev->pd_type_checked) {
 			bcdev->pd_type_checked = true;
 			chg_err("start check pd type\n");
-			schedule_delayed_work(&bcdev->pd_type_check_work, OPLUS_PD_TYPE_CHECK_INTERVAL);
+			// schedule_delayed_work(&bcdev->pd_type_check_work, OPLUS_PD_TYPE_CHECK_INTERVAL);
 		}
 		break;
 	case POWER_SUPPLY_USB_TYPE_PD_PPS:
