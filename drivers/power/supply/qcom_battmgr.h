@@ -14,6 +14,7 @@ enum qcom_battmgr_variant {
 	QCOM_BATTMGR_SM8350,
 	QCOM_BATTMGR_SM8550,
 	QCOM_BATTMGR_X1E80100,
+	XIAOMI_BATTMGR_SM8550,
 };
 
 enum qcom_battmgr_unit {
