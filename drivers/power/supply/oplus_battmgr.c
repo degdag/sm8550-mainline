@@ -452,6 +452,7 @@ static bool oplus_chg_wls_is_present(struct battery_chg_dev *bcdev)
 
 
 
+#if 0 /* unported downstream code, unused */
 void oplus_chg_variables_reset(struct oplus_chg_chip *chip, bool in)
 {
 	int i;
@@ -717,6 +718,7 @@ void oplus_chg_variables_reset(struct oplus_chg_chip *chip, bool in)
 	chip->voocphy_notify_ap_suspend = false;
 	chg_err("charger detect is %d\n", in);
 }
+#endif
 
 
 
@@ -770,6 +772,7 @@ int oplus_chg_set_pd_config(struct battery_chg_dev *bcdev)
 
 
 #define UNKNOW_TYPE_DETECT_RETRY_TIME 2
+#if 0 /* unported downstream code, unused */
 void oplus_charger_detect_check(struct battery_chg_dev *bcdev)
 {
 	struct voocphy_manager *vooc = bcdev->vooc_chip;
@@ -864,6 +867,7 @@ void oplus_charger_detect_check(struct battery_chg_dev *bcdev)
 
 	}
 }
+#endif
 
 static void oplus_chg_update_work(struct battery_chg_dev *bcdev)
 {
@@ -1865,7 +1869,8 @@ static void oplus_battmgr_notification(struct qcom_battmgr *battmgr,
 	case BC_VOOC_VBUS_ADC_ENABLE:
 		printk(KERN_ERR "!!!!!vooc_vbus_adc_enable\n");
 		bcdev->adsp_voocphy_err_check = true;
-		bcdev->vooc_chip.adspvoocphy_fastchg_start = true;
+		if (bcdev->vooc_chip)
+			bcdev->vooc_chip->adspvoocphy_fastchg_start = true;
 		cancel_delayed_work_sync(&bcdev->adsp_voocphy_err_work);
 		schedule_delayed_work(&bcdev->adsp_voocphy_err_work, msecs_to_jiffies(8500));
 		smbchg_charging_disable(battmgr);
@@ -2321,7 +2326,7 @@ static int oplus_battmgr_probe(struct auxiliary_device *adev,
 	// INIT_DELAYED_WORK(&bcdev->source_pdo_check_work, oplus_source_pdo_check_work);
 	// INIT_DELAYED_WORK(&bcdev->vchg_trig_work, oplus_vchg_trig_work);
 	// INIT_DELAYED_WORK(&bcdev->adsp_track_notify_work, adsp_track_notification_handler);
-	INIT_DELAYED_WORK(&chip->check_pd_svooc_work, oplus_chg_check_pd_svooc_work);
+	// 	INIT_DELAYED_WORK(&chip->check_pd_svooc_work, oplus_chg_check_pd_svooc_work);
 
 
 	match = of_match_device(oplus_battmgr_of_variants, dev->parent);
