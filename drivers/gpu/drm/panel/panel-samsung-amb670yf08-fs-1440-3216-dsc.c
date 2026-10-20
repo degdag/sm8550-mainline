@@ -798,8 +798,6 @@ static int panel_amb670_probe(struct mipi_dsi_device *dsi)
 	ctx->dsc.slice_height = ctx->desc->modes[ctx->mode_id].slice_height;
 	ctx->dsc.slice_count = ctx->desc->modes[ctx->mode_id].slice_count;
 
-	/* TO-DO Verifie using  2  . */
-	dsi->dsc_slice_per_pkt = 1;
 
 	ret = mipi_dsi_attach(dsi);
 	if (ret < 0) {

@@ -553,7 +553,6 @@ static int panel_samsung_amb670yf08_fs_1440_3216_dsc_probe(struct mipi_dsi_devic
 	/* TODO: Pass slice_per_pkt = 2 */
 	ctx->dsc.slice_height = 36;
 	ctx->dsc.slice_width = 540;
-	ctx->dsi->dsc_slice_per_pkt = 1; //works 1
 	ctx->dsc.slice_count = 2; //works 2
 	ctx->dsc.convert_rgb = true; //works true
 	ctx->dsc.bits_per_component = 10;

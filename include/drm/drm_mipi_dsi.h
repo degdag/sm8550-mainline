@@ -184,6 +184,8 @@ struct mipi_dsi_device_info {
  * legacy drivers
  * @dsc: panel/bridge DSC pps payload to be sent
  */
+struct drm_display_mode;
+
 struct mipi_dsi_device {
 	struct mipi_dsi_host *host;
 	struct device dev;
@@ -197,6 +199,15 @@ struct mipi_dsi_device {
 	unsigned long hs_rate;
 	unsigned long lp_rate;
 	struct drm_dsc_config *dsc;
+	/**
+	 * @dsc_slice_for_mode: optional, report the DSC slice geometry that
+	 * @mode needs. Return 0 and fill the outputs, or -EINVAL if @mode is
+	 * not supported. Must not modify @dsc.
+	 */
+	int (*dsc_slice_for_mode)(struct mipi_dsi_device *dsi,
+				  const struct drm_display_mode *mode,
+				  u16 *slice_width, u16 *slice_height,
+				  u8 *slice_count);
 };
 
 /**
