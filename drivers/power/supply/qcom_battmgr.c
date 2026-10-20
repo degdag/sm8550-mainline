@@ -13,20 +13,7 @@
 #include <linux/math.h>
 #include <linux/units.h>
 
-<<<<<<< HEAD
-#define BATTMGR_CHEMISTRY_LEN	4
-#define BATTMGR_STRING_LEN	128
-
-enum qcom_battmgr_variant {
-	QCOM_BATTMGR_SC8280XP,
-	QCOM_BATTMGR_SM8350,
-	QCOM_BATTMGR_SM8550,
-	QCOM_BATTMGR_X1E80100,
-	XIAOMI_BATTMGR_SM8550
-};
-=======
 #include "qcom_battmgr.h"
->>>>>>> 78d213360143 (power: supply: Add initial OnePlus PMIC GLINK power supply)
 
 #define BATTMGR_BAT_STATUS		0x1
 
