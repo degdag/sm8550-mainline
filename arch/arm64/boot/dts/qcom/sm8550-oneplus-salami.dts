@@ -109,14 +109,6 @@
 					};
 				};
 
-				port@1 {
-					reg = <1>;
-
-					pmic_glink_ss_in: endpoint {
-						remote-endpoint = <&usb_dp_qmpphy_out>;
-					};
-				};
-
 				port@2 {
 					reg = <2>;
 
@@ -1480,6 +1472,12 @@
 };
 
 &usb_1 {
+	/* USB 2.0 only: high-speed, no SS PHY, PIPE clock taken from UTMI */
+	maximum-speed = "high-speed";
+	phys = <&usb_1_hsphy>;
+	phy-names = "usb2-phy";
+	qcom,select-utmi-as-pipe-clk;
+
 	status = "okay";
 };
 
@@ -1493,17 +1491,6 @@
 
 	phys = <&pm8550b_eusb2_repeater>;
 	status = "okay";
-};
-
-&usb_dp_qmpphy {
-	vdda-phy-supply = <&vreg_l3e_1p2>;
-	vdda-pll-supply = <&vreg_l3f_0p91>;
-
-	status = "okay";
-};
-
-&usb_dp_qmpphy_out {
-	remote-endpoint = <&pmic_glink_ss_in>;
 };
 
 &videocc {

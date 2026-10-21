@@ -1383,6 +1383,16 @@ static int battery_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		val->intval = battmgr->status.status;
+		/* ADSP keeps reporting Discharging on mainline; derive from USB + gauge */
+		if (battmgr->usb.online &&
+		    val->intval == POWER_SUPPLY_STATUS_DISCHARGING) {
+			if (battmgr->status.capacity >= 100)
+				val->intval = POWER_SUPPLY_STATUS_FULL;
+			else if ((int)battmgr->status.current_now < -20000)
+				val->intval = POWER_SUPPLY_STATUS_CHARGING;
+			else
+				val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+		}
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		val->intval = battmgr->info.charge_type;
@@ -1412,7 +1422,7 @@ static int battery_get_property(struct power_supply *psy,
 		val->intval = battmgr->status.voltage_ocv;
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		val->intval = battmgr->status.current_now;
+		val->intval = -(int)battmgr->status.current_now;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
 		val->intval = battmgr->bcdev->curr_thermal_level;
@@ -1609,7 +1619,7 @@ static int oplus_battmgr_usb_update(struct qcom_battmgr *battmgr,
 
 	prop = usb_prop_map[psp];
 
-	return oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_GET, prop, 0);
+	return oplus_battmgr_request_property(battmgr, BC_USB_STATUS_GET, prop, 0);
 }
 
 static int usb_get_property(struct power_supply *psy,
@@ -2219,7 +2229,7 @@ static void oplus_adsp_crash_recover_func(struct work_struct *work)
 	// }
 	chip->charger_type  = POWER_SUPPLY_TYPE_UNKNOWN;
 	// if (chip->voocphy_support == ADSP_VOOCPHY)
-		oplus_adsp_voocphy_enable(bcdev->battmgr, true);
+		oplus_adsp_voocphy_enable(bcdev->battmgr, false);
 
 	schedule_delayed_work(&bcdev->otg_init_work, round_jiffies_relative(msecs_to_jiffies(2000)));
 	oplus_chg_update_work(bcdev);
