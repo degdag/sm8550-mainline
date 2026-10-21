@@ -1117,6 +1117,10 @@ static void otg_notification_handler(struct work_struct *work)
 		enable = (bcdev->otg_prohibited ? false : bcdev->otg_online);
 		// oplus_voocphy_set_chg_auto_mode(enable);
 		// otg_func_ptr = (enable ? chip->chg_ops->otg_enable : chip->chg_ops->otg_disable);
+		{
+			int ret = oplus_battmgr_request_property(bcdev->battmgr, BC_USB_STATUS_SET, USB_OTG_VBUS_REGULATOR_ENABLE, enable);
+			chg_err("otg vbus regulator enable=%d ret=%d\n", enable, ret);
+		}
 		if (otg_func_ptr != NULL) {
 			otg_func_ptr();
 		}
