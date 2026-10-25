@@ -66,7 +66,7 @@ static int smbchg_charging_disable(struct qcom_battmgr *battmgr)
 	struct battery_chg_dev *bcdev = battmgr->bcdev;
 
 	mutex_lock(&bcdev->chg_en_lock);
-	ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, BATT_CHG_EN, 0);
+	ret = oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_SET, BATT_CHG_EN, 0);
 	if (ret)
 		chg_err("set disable charging fail, ret=%d\n", ret);
 	else {
@@ -84,7 +84,7 @@ static int smbchg_charging_enable(struct qcom_battmgr *battmgr)
 	struct battery_chg_dev *bcdev = battmgr->bcdev;
 
 	mutex_lock(&bcdev->chg_en_lock);
-	ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, BATT_CHG_EN, 1);
+	ret = oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_SET, BATT_CHG_EN, 1);
 	if (ret)
 		chg_err("set enable charging fail, ret=%d\n", ret);
 	else {
@@ -909,6 +909,46 @@ static void oplus_chg_update_work(struct battery_chg_dev *bcdev)
 	// }
 }
 
+/* AP-side plug-in setup mirrored from the stock log: icl 500, charging on, FV 8840 mV (two cells), FCC 1100 mA, icl 800 mA */
+static unsigned int plugin_setup_mask = 0x1f;
+module_param(plugin_setup_mask, uint, 0644);
+MODULE_PARM_DESC(plugin_setup_mask, "bit0 icl500, bit1 chg enable, bit2 float voltage, bit3 fcc, bit4 icl800");
+
+static void oplus_chg_plugin_setup(struct qcom_battmgr *battmgr)
+{
+	unsigned int m = READ_ONCE(plugin_setup_mask);
+	int ret;
+
+	chg_err("plugin setup mask=0x%x\n", m);
+	if (m & BIT(0)) {
+		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 500000);
+		if (ret) {
+			chg_err("plugin setup: set icl 500 mA fail, ret=%d\n", ret);
+			return;
+		}
+	}
+	if (m & BIT(1))
+		smbchg_charging_enable(battmgr);
+	if (m & BIT(2)) {
+		ret = oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_SET, BATT_VOLT_MAX, 8840);
+		if (ret) {
+			chg_err("plugin setup: set fv 8840 mV fail, ret=%d\n", ret);
+			return;
+		}
+	}
+	if (m & BIT(3)) {
+		ret = oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_SET, BATT_CHG_CTRL_LIM, 1100000);
+		if (ret) {
+			chg_err("plugin setup: set fcc 1100 mA fail, ret=%d\n", ret);
+			return;
+		}
+	}
+	if (m & BIT(4)) {
+		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 800000);
+		chg_err("plugin setup done, icl 800 mA ret=%d\n", ret);
+	}
+}
+
 static void oplus_plugin_irq_work(struct work_struct *work)
 {
 	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, plugin_irq_work.work);
@@ -932,6 +972,8 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 
 	// oplus_adsp_voocphy_set_fastchg_start(false);
 	chg_err("!!!prop[%d], usb_online[%d]\n", bcdev->usb.usb_in_status, bcdev->usb_in_status);
+	if (bcdev->usb_in_status)
+		oplus_chg_plugin_setup(battmgr);
 	// oplus_quirks_notify_plugin(bcdev->usb_in_status);
 	// oplus_chg_track_check_wired_charging_break(usb_plugin_status);
 
@@ -1083,6 +1125,34 @@ static void oplus_set_otg_ovp_en_val(struct battery_chg_dev *bcdev, int value)
 
 	// chg_err("<~OTG~>set value:%d, gpio_val:%d\n", value,
 	// 	gpio_get_value(bcdev->oplus_custom_gpio.otg_ovp_en_gpio));
+}
+
+/*
+ * These used to run directly in the glink notification callback, which is
+ * atomic context: the property requests sleep waiting for the ADSP reply.
+ * Run them from a high-priority work item instead.
+ */
+static void oplus_vooc_suspend_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, vooc_suspend_work);
+
+	smbchg_charging_disable(bcdev->battmgr);
+	smbchg_usb_suspend_enable(bcdev->battmgr);
+}
+
+static void oplus_usb_unsuspend_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, usb_unsuspend_work);
+
+	smbchg_usb_suspend_disable(bcdev->battmgr);
+}
+
+static void oplus_cancel_rt_work(void *data)
+{
+	struct battery_chg_dev *bcdev = data;
+
+	cancel_work_sync(&bcdev->vooc_suspend_work);
+	cancel_work_sync(&bcdev->usb_unsuspend_work);
 }
 
 static void otg_notification_handler(struct work_struct *work)
@@ -1390,7 +1460,8 @@ static int battery_get_property(struct power_supply *psy,
 		/* ADSP keeps reporting Discharging on mainline; derive from USB + gauge */
 		if (battmgr->usb.online &&
 		    val->intval == POWER_SUPPLY_STATUS_DISCHARGING) {
-			if (battmgr->status.capacity >= 100)
+			if (battmgr->status.percent != (unsigned int)-1 &&
+			    battmgr->status.percent >= 100)
 				val->intval = POWER_SUPPLY_STATUS_FULL;
 			else if ((int)battmgr->status.current_now < -20000)
 				val->intval = POWER_SUPPLY_STATUS_CHARGING;
@@ -1473,7 +1544,7 @@ static int battery_get_property(struct power_supply *psy,
 		val->intval = battmgr->status.percent;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
-		val->intval = DIV_ROUND_CLOSEST((int)battmgr->status.temperature, 10);
+		val->intval = (int)battmgr->status.temperature;
 		break;
 	case POWER_SUPPLY_PROP_INTERNAL_RESISTANCE:
 		val->intval = battmgr->status.resistance;
@@ -1885,10 +1956,9 @@ static void oplus_battmgr_notification(struct qcom_battmgr *battmgr,
 		bcdev->adsp_voocphy_err_check = true;
 		if (bcdev->vooc_chip)
 			bcdev->vooc_chip->adspvoocphy_fastchg_start = true;
-		cancel_delayed_work_sync(&bcdev->adsp_voocphy_err_work);
+		cancel_delayed_work(&bcdev->adsp_voocphy_err_work);
 		schedule_delayed_work(&bcdev->adsp_voocphy_err_work, msecs_to_jiffies(8500));
-		smbchg_charging_disable(battmgr);
-		smbchg_usb_suspend_enable(battmgr);/*excute in glink loop for real time*/
+		queue_work(system_highpri_wq, &bcdev->vooc_suspend_work);
 		break;
 	case BC_CID_DETECT:
 		printk(KERN_ERR "!!!!!cid detect || no detect\n");
@@ -1927,7 +1997,7 @@ static void oplus_battmgr_notification(struct qcom_battmgr *battmgr,
 		// schedule_delayed_work(&bcdev->pd_set_aicl_work, 0);
 		break;
 	case BC_CHG_STATUS_SET:
-		smbchg_usb_suspend_disable(battmgr);
+		queue_work(system_highpri_wq, &bcdev->usb_unsuspend_work);
 		break;
 	case BC_ADSP_NOTIFY_AP_CP_BYPASS_INIT:
 		printk(KERN_ERR "!!!!!BC_ADSP_NOTIFY_AP_CP_BYPASS_INIT\n");
@@ -2162,6 +2232,12 @@ static void battmgr_callback(struct qcom_battmgr *battmgr,
 		case WLS_CURR_MAX:
 			battmgr->wireless.current_max = le32_to_cpu(resp->intval.value);
 			break;
+		case WLS_INPUT_CURR_LIMIT:
+			battmgr->wireless.current_limit = le32_to_cpu(resp->intval.value);
+			break;
+		case WLS_CONN_TEMP:
+			battmgr->wireless.temp = le32_to_cpu(resp->intval.value);
+			break;
 		default:
 			dev_warn(battmgr->dev, "unknown property %#x\n", property);
 			break;
@@ -2311,6 +2387,10 @@ static int oplus_battmgr_probe(struct auxiliary_device *adev,
 	// INIT_DELAYED_WORK(&bcdev->voocphy_enable_check_work, oplus_voocphy_enable_check_func);
 	// INIT_DELAYED_WORK(&bcdev->adsp_voocphy_enable_check_work, oplus_adsp_voocphy_enable_check_func);
 	INIT_DELAYED_WORK(&bcdev->otg_vbus_enable_work, otg_notification_handler);
+	INIT_WORK(&bcdev->vooc_suspend_work, oplus_vooc_suspend_work);
+	INIT_WORK(&bcdev->usb_unsuspend_work, oplus_usb_unsuspend_work);
+	if (devm_add_action_or_reset(dev, oplus_cancel_rt_work, bcdev))
+		return -ENOMEM;
 	// INIT_DELAYED_WORK(&bcdev->hvdcp_disable_work, oplus_hvdcp_disable_work);
 	// INIT_DELAYED_WORK(&bcdev->pd_only_check_work, oplus_pd_only_check_work);
 	// INIT_DELAYED_WORK(&bcdev->otg_status_check_work, oplus_otg_status_check_work);
