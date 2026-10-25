@@ -944,7 +944,7 @@ static void oplus_chg_plugin_setup(struct qcom_battmgr *battmgr)
 		}
 	}
 	if (m & BIT(4)) {
-		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 800000);
+		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 2000000);
 		chg_err("plugin setup done, icl 800 mA ret=%d\n", ret);
 	}
 }
