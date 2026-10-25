@@ -907,6 +907,8 @@ struct battery_chg_dev {
 	bool force_svooc;
 
 	struct delayed_work pd_type_check_work;
+	struct work_struct vooc_suspend_work;
+	struct work_struct usb_unsuspend_work;
 	bool status_wake_lock_on;
 	bool pd_type_checked;
 
