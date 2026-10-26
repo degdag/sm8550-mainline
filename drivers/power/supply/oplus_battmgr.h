@@ -805,6 +805,7 @@ struct battery_chg_dev {
 	struct delayed_work suspend_check_work;
 	struct delayed_work adsp_voocphy_status_work;
 	struct delayed_work otg_init_work;
+	struct delayed_work thermal_guard_work;
 	struct delayed_work cid_status_change_work;
 	struct delayed_work usbtemp_recover_work;
 	struct delayed_work adsp_crash_recover_work;
