@@ -1192,6 +1192,8 @@ static void otg_notification_handler(struct work_struct *work)
 		{
 			int ret = oplus_battmgr_request_property(bcdev->battmgr, BC_USB_STATUS_SET, USB_OTG_VBUS_REGULATOR_ENABLE, enable);
 			chg_err("otg vbus regulator enable=%d ret=%d\n", enable, ret);
+			if (!bcdev->otg_online)
+				smbchg_usb_suspend_disable(bcdev->battmgr);
 		}
 		if (otg_func_ptr != NULL) {
 			otg_func_ptr();
