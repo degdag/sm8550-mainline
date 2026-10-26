@@ -813,6 +813,7 @@ struct battery_chg_dev {
 	struct delayed_work voocphy_enable_check_work;
 	struct delayed_work adsp_voocphy_enable_check_work;
 	struct delayed_work otg_vbus_enable_work;
+	struct delayed_work otg_role_bounce_work;
 	struct delayed_work otg_status_check_work;
 	struct delayed_work vbus_adc_enable_work;
 	struct delayed_work plugin_irq_work;
