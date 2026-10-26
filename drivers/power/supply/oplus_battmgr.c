@@ -4,6 +4,8 @@
  */
 
 #include <linux/auxiliary_bus.h>
+#include <linux/property.h>
+#include <linux/usb/role.h>
 #include <linux/devm-helpers.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -1155,6 +1157,53 @@ static void oplus_cancel_rt_work(void *data)
 	cancel_work_sync(&bcdev->vooc_suspend_work);
 	cancel_work_sync(&bcdev->usb_unsuspend_work);
 	cancel_delayed_work_sync(&bcdev->thermal_guard_work);
+	cancel_delayed_work_sync(&bcdev->otg_role_bounce_work);
+}
+
+/*
+ * After OTG ends the ADSP classifies the next charger as type 9 and never
+ * starts the VOOC handshake. A short usb role bounce through HOST clears it
+ * (NONE does not).
+ */
+static int otg_bounce_delay_ms = 1000;
+module_param(otg_bounce_delay_ms, int, 0644);
+static int otg_bounce_hold_ms = 300;
+module_param(otg_bounce_hold_ms, int, 0644);
+static int otg_bounce_host = 1;
+module_param(otg_bounce_host, int, 0644);
+
+static void oplus_otg_role_bounce_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, otg_role_bounce_work.work);
+	struct usb_role_switch *sw = NULL;
+
+	if (bcdev->otg_online || bcdev->usb_in_status)
+		return;
+
+	device_for_each_child_node_scoped(bcdev->battmgr->dev, child) {
+		if (!fwnode_device_is_compatible(child, "usb-c-connector"))
+			continue;
+		sw = fwnode_usb_role_switch_get(child);
+		break;
+	}
+	if (IS_ERR_OR_NULL(sw)) {
+		chg_err("otg role bounce: no role switch\n");
+		return;
+	}
+
+	if (usb_role_switch_get_role(sw) != USB_ROLE_DEVICE) {
+		chg_err("otg role bounce: role is %d, skip\n", usb_role_switch_get_role(sw));
+		goto out;
+	}
+
+	usb_role_switch_set_role(sw, otg_bounce_host ? USB_ROLE_HOST : USB_ROLE_NONE);
+	msleep(otg_bounce_hold_ms);
+	if (usb_role_switch_get_role(sw) == (otg_bounce_host ? USB_ROLE_HOST : USB_ROLE_NONE) &&
+	    !bcdev->otg_online && !bcdev->usb_in_status)
+		usb_role_switch_set_role(sw, USB_ROLE_DEVICE);
+	chg_err("otg role bounce done\n");
+out:
+	usb_role_switch_put(sw);
 }
 
 static void otg_notification_handler(struct work_struct *work)
@@ -2009,6 +2058,7 @@ static void oplus_battmgr_notification(struct qcom_battmgr *battmgr,
 		pm_wakeup_dev_event(battmgr->dev, 50, true);
 		bcdev->otg_online = false;
 		schedule_delayed_work(&bcdev->otg_vbus_enable_work, 0);
+		queue_delayed_work(system_dfl_wq, &bcdev->otg_role_bounce_work, msecs_to_jiffies(otg_bounce_delay_ms));
 		break;
 	case BC_ADSP_NOTIFY_TRACK:
 		pr_info("!!!!!adsp track notify\n");
@@ -2450,6 +2500,7 @@ static int oplus_battmgr_probe(struct auxiliary_device *adev,
 	// INIT_DELAYED_WORK(&bcdev->voocphy_enable_check_work, oplus_voocphy_enable_check_func);
 	// INIT_DELAYED_WORK(&bcdev->adsp_voocphy_enable_check_work, oplus_adsp_voocphy_enable_check_func);
 	INIT_DELAYED_WORK(&bcdev->otg_vbus_enable_work, otg_notification_handler);
+	INIT_DELAYED_WORK(&bcdev->otg_role_bounce_work, oplus_otg_role_bounce_work);
 	INIT_WORK(&bcdev->vooc_suspend_work, oplus_vooc_suspend_work);
 	INIT_WORK(&bcdev->usb_unsuspend_work, oplus_usb_unsuspend_work);
 	if (devm_add_action_or_reset(dev, oplus_cancel_rt_work, bcdev))
