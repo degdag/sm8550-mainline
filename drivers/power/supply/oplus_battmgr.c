@@ -944,7 +944,7 @@ static void oplus_chg_plugin_setup(struct qcom_battmgr *battmgr)
 		}
 	}
 	if (m & BIT(4)) {
-		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 2000000);
+		ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 800000);
 		chg_err("plugin setup done, icl 800 mA ret=%d\n", ret);
 	}
 }
@@ -1211,6 +1211,12 @@ static void oplus_adsp_voocphy_err_work(struct work_struct *work)
 
 	chg_err("!!!call\n");
 	if (/*oplus_voocphy_get_fastchg_ing() == false && */bcdev->adsp_voocphy_err_check) {
+		if (!oplus_battmgr_request_property(battmgr, BC_USB_STATUS_GET, USB_VOLT_NOW, 0) &&
+		    battmgr->usb.voltage_now > 7000000) {
+			chg_err("vbus %u uV, fast charge running, skip recovery\n", (unsigned int)battmgr->usb.voltage_now);
+			bcdev->adsp_voocphy_err_check = false;
+			return;
+		}
 		chg_err("!!!happend\n");
 		bcdev->adsp_voocphy_err_check = false;
 		smbchg_usb_suspend_enable(battmgr);
@@ -2309,7 +2315,7 @@ static void oplus_adsp_crash_recover_func(struct work_struct *work)
 	// }
 	chip->charger_type  = POWER_SUPPLY_TYPE_UNKNOWN;
 	// if (chip->voocphy_support == ADSP_VOOCPHY)
-		oplus_adsp_voocphy_enable(bcdev->battmgr, false);
+		oplus_adsp_voocphy_enable(bcdev->battmgr, true);
 
 	schedule_delayed_work(&bcdev->otg_init_work, round_jiffies_relative(msecs_to_jiffies(2000)));
 	oplus_chg_update_work(bcdev);
