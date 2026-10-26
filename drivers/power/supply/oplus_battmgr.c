@@ -974,6 +974,7 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 	chg_err("!!!prop[%d], usb_online[%d]\n", bcdev->usb.usb_in_status, bcdev->usb_in_status);
 	if (bcdev->usb_in_status)
 		oplus_chg_plugin_setup(battmgr);
+	mod_delayed_work(system_dfl_wq, &bcdev->thermal_guard_work, msecs_to_jiffies(bcdev->usb_in_status ? 5000 : 200));
 	// oplus_quirks_notify_plugin(bcdev->usb_in_status);
 	// oplus_chg_track_check_wired_charging_break(usb_plugin_status);
 
@@ -1153,6 +1154,7 @@ static void oplus_cancel_rt_work(void *data)
 
 	cancel_work_sync(&bcdev->vooc_suspend_work);
 	cancel_work_sync(&bcdev->usb_unsuspend_work);
+	cancel_delayed_work_sync(&bcdev->thermal_guard_work);
 }
 
 static void otg_notification_handler(struct work_struct *work)
@@ -1227,6 +1229,59 @@ static void oplus_adsp_voocphy_err_work(struct work_struct *work)
 			oplus_adsp_voocphy_reset_again(battmgr);
 		// }
 	}
+}
+
+static int guard_hot_dc = 420;
+module_param(guard_hot_dc, int, 0644);
+MODULE_PARM_DESC(guard_hot_dc, "stop charging at or above this battery temp (0.1 C units)");
+static int guard_resume_dc = 400;
+module_param(guard_resume_dc, int, 0644);
+MODULE_PARM_DESC(guard_resume_dc, "resume charging at or below this battery temp (0.1 C units)");
+
+static void oplus_thermal_guard_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, thermal_guard_work.work);
+	struct qcom_battmgr *battmgr = bcdev->battmgr;
+	static bool tripped;
+	int t;
+	int resume_dc;
+
+	if (!bcdev->usb_in_status) {
+		if (tripped) {
+			tripped = false;
+			smbchg_usb_suspend_disable(battmgr);
+			smbchg_charging_enable(battmgr);
+			oplus_adsp_voocphy_enable(battmgr, true);
+			chg_err("thermal guard: unplugged, state restored\n");
+		}
+		return;
+	}
+
+	if (oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_GET, BATT_TEMP, 0)) {
+		chg_err("thermal guard: temp read failed\n");
+		goto again;
+	}
+	t = (int)battmgr->status.temperature;
+	resume_dc = min(guard_resume_dc, guard_hot_dc - 20);
+
+	if (!tripped && t >= guard_hot_dc) {
+		tripped = true;
+		chg_err("thermal guard: %d >= %d, stopping charge\n", t, guard_hot_dc);
+		bcdev->adsp_voocphy_err_check = false;
+		cancel_delayed_work(&bcdev->adsp_voocphy_err_work);
+		oplus_adsp_voocphy_enable(battmgr, false);
+		smbchg_charging_disable(battmgr);
+		smbchg_usb_suspend_enable(battmgr);
+	} else if (tripped && t <= resume_dc) {
+		tripped = false;
+		chg_err("thermal guard: %d <= %d, resuming charge\n", t, resume_dc);
+		smbchg_usb_suspend_disable(battmgr);
+		oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, 800000);
+		smbchg_charging_enable(battmgr);
+		oplus_adsp_voocphy_enable(battmgr, true);
+	}
+again:
+	queue_delayed_work(system_dfl_wq, &bcdev->thermal_guard_work, msecs_to_jiffies(5000));
 }
 
 static struct power_supply_desc usb_psy_desc;
@@ -2402,6 +2457,7 @@ static int oplus_battmgr_probe(struct auxiliary_device *adev,
 	// INIT_DELAYED_WORK(&bcdev->otg_status_check_work, oplus_otg_status_check_work);
 	// INIT_DELAYED_WORK(&bcdev->vbus_adc_enable_work, oplus_vbus_enable_adc_work);
 	INIT_DELAYED_WORK(&bcdev->adsp_voocphy_err_work, oplus_adsp_voocphy_err_work);
+	INIT_DELAYED_WORK(&bcdev->thermal_guard_work, oplus_thermal_guard_work);
 	// INIT_DELAYED_WORK(&bcdev->oem_lcm_en_check_work, oplus_oem_lcm_en_check_work);
 	// INIT_DELAYED_WORK(&bcdev->voocphy_err_work, oplus_voocphy_err_work);
 	// INIT_DELAYED_WORK(&bcdev->ctrl_lcm_frequency, oplus_chg_ctrl_lcm_work);
