@@ -167,6 +167,7 @@ struct msm_dsi_host {
 	struct drm_display_mode *mode;
 	struct drm_dsc_config *dsc;
 	unsigned int dsc_slice_per_pkt;
+	struct mipi_dsi_device *dsi_dev;	/* attached device, for per-mode DSC slice lookup */
 
 	/* connected device info */
 	unsigned int channel;
@@ -1708,6 +1709,7 @@ static int dsi_host_attach(struct mipi_dsi_host *host,
 	msm_host->lanes = dsi->lanes;
 	msm_host->format = dsi->format;
 	msm_host->mode_flags = dsi->mode_flags;
+	msm_host->dsi_dev = dsi;
 	if (dsi->dsc) {
 		msm_host->dsc = dsi->dsc;
 		msm_host->dsc_slice_per_pkt = dsi->dsc_slice_per_pkt;
@@ -1751,6 +1753,7 @@ static int dsi_host_detach(struct mipi_dsi_host *host,
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
 
 	dsi_dev_detach(msm_host->pdev);
+	msm_host->dsi_dev = NULL;
 
 	DBG("id=%d", msm_host->id);
 
@@ -2568,6 +2571,28 @@ unlock_ret:
 	return 0;
 }
 
+/*
+ * Panels that support several resolutions with different DSC slice geometry
+ * can provide dsc_slice_for_mode(); otherwise the static slice config of
+ * dsi->dsc is used for every mode (previous behaviour).
+ */
+static int dsi_host_dsc_slice_for_mode(struct msm_dsi_host *msm_host,
+				       const struct drm_display_mode *mode,
+				       u16 *width, u16 *height, u8 *count)
+{
+	struct drm_dsc_config *dsc = msm_host->dsc;
+	struct mipi_dsi_device *dsi = msm_host->dsi_dev;
+
+	*width = dsc->slice_width;
+	*height = dsc->slice_height;
+	*count = dsc->slice_count;
+
+	if (dsi && dsi->dsc_slice_for_mode)
+		return dsi->dsc_slice_for_mode(dsi, mode, width, height, count);
+
+	return 0;
+}
+
 int msm_dsi_host_set_display_mode(struct mipi_dsi_host *host,
 				  const struct drm_display_mode *mode)
 {
@@ -2584,6 +2609,21 @@ int msm_dsi_host_set_display_mode(struct mipi_dsi_host *host,
 		return -ENOMEM;
 	}
 
+	/*
+	 * mode_set runs after the old mode was disabled and before pre_enable,
+	 * i.e. before dsi_timing_setup()/DPU consume the slice geometry.
+	 */
+	if (msm_host->dsc) {
+		u16 sw, sh;
+		u8 sc;
+
+		if (!dsi_host_dsc_slice_for_mode(msm_host, mode, &sw, &sh, &sc)) {
+			msm_host->dsc->slice_width = sw;
+			msm_host->dsc->slice_height = sh;
+			msm_host->dsc->slice_count = sc;
+		}
+	}
+
 	return 0;
 }
 
@@ -2591,22 +2631,28 @@ enum drm_mode_status msm_dsi_host_check_dsc(struct mipi_dsi_host *host,
 					    const struct drm_display_mode *mode)
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
-	struct drm_dsc_config *dsc = msm_host->dsc;
 	int pic_width = mode->hdisplay;
 	int pic_height = mode->vdisplay;
+	u16 slice_width, slice_height;
+	u8 slice_count;
 
 	if (!msm_host->dsc)
 		return MODE_OK;
 
-	if (pic_width % dsc->slice_width) {
+	/* Per-mode geometry if the panel provides it; does not modify dsc */
+	if (dsi_host_dsc_slice_for_mode(msm_host, mode, &slice_width,
+					&slice_height, &slice_count))
+		return MODE_BAD;
+
+	if (pic_width % slice_width) {
 		pr_err("DSI: pic_width %d has to be multiple of slice %d\n",
-		       pic_width, dsc->slice_width);
+		       pic_width, slice_width);
 		return MODE_H_ILLEGAL;
 	}
 
-	if (pic_height % dsc->slice_height) {
+	if (pic_height % slice_height) {
 		pr_err("DSI: pic_height %d has to be multiple of slice %d\n",
-		       pic_height, dsc->slice_height);
+		       pic_height, slice_height);
 		return MODE_V_ILLEGAL;
 	}
 
