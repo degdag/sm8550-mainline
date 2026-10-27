@@ -1063,7 +1063,7 @@
 	status = "okay";
 };
 
-&pcieport0 {
+&pcie0_port0 {
 	status = "okay";
 	
 	wifi@0 {
