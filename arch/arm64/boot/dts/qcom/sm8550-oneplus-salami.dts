@@ -375,6 +375,7 @@
 		vdddig-supply = <&vreg_s4e_0p9>;
 		vddrfa1p2-supply = <&vreg_s4g_1p3>;
 		vddrfa1p8-supply = <&vreg_s6g_1p8>;
+		vddio1p2-supply = <&vreg_l3e_1p2>;
 
 		regulators {
 			vreg_pmu_rfa_cmn: ldo0 {
