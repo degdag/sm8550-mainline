@@ -906,17 +906,6 @@
 	firmware-name = "qcom/sm8550/salami/a740_zap.mbn";
 };
 
-/* Workaround: cpu0's WFI-based idle state (little_cpu_sleep_0) has exit
- * latency too high to service GMU IRQ/SPMI responses in time, causing
- * intermittent "Timeout waiting for GMU OOB set GPU_SET" / HFI_H2F_MSG
- * timeouts and GPU hangs. See narmstrong/mntirc IRC discussion on
- * qcs8550/sm8550 mainline bringup. Only cpu0 needs this; cpu1-cpu3 keep
- * the shared idle state via their own cpu_pd1/cpu_pd2/cpu_pd3 nodes.
- */
-&cpu_pd0 {
-	/delete-property/ domain-idle-states;
-};
-
 &i2c0 {
 	status = "disabled";
 	nfc: sn-nci@28 {
