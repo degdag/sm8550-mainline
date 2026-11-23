@@ -911,6 +911,16 @@ static void oplus_chg_update_work(struct battery_chg_dev *bcdev)
 	// }
 }
 
+static unsigned int plain_chg_delay_ms = 6000;
+module_param(plain_chg_delay_ms, uint, 0644);
+MODULE_PARM_DESC(plain_chg_delay_ms, "wait after plug-in before treating the charger as non-VOOC");
+static unsigned int plain_icl_ma = 2000;
+module_param(plain_icl_ma, uint, 0644);
+MODULE_PARM_DESC(plain_icl_ma, "input current limit for DCP/CDP/PD 5V chargers (mA)");
+static unsigned int plain_fcc_ma = 2000;
+module_param(plain_fcc_ma, uint, 0644);
+MODULE_PARM_DESC(plain_fcc_ma, "fast charge current for non-VOOC chargers (mA)");
+
 /* AP-side plug-in setup mirrored from the stock log: icl 500, charging on, FV 8840 mV (two cells), FCC 1100 mA, icl 800 mA */
 static unsigned int plugin_setup_mask = 0x1f;
 module_param(plugin_setup_mask, uint, 0644);
@@ -970,12 +980,20 @@ static void oplus_plugin_irq_work(struct work_struct *work)
 		bcdev->usb_in_status = 0;
 		bcdev->pd_svooc = false;
 	}
+	if (bcdev->usb_in_status && bcdev->adsp_voocphy_err_check) {
+		chg_err("plug irq 0x%x during VOOC handshake, ignored\n", bcdev->usb.usb_in_status);
+		return;
+	}
 	usb_plugin_status = bcdev->usb.usb_in_status & 0xff;
 
 	// oplus_adsp_voocphy_set_fastchg_start(false);
 	chg_err("!!!prop[%d], usb_online[%d]\n", bcdev->usb.usb_in_status, bcdev->usb_in_status);
-	if (bcdev->usb_in_status)
+	if (bcdev->usb_in_status) {
 		oplus_chg_plugin_setup(battmgr);
+		mod_delayed_work(system_dfl_wq, &bcdev->plain_chg_work, msecs_to_jiffies(plain_chg_delay_ms));
+	} else {
+		cancel_delayed_work(&bcdev->plain_chg_work);
+	}
 	mod_delayed_work(system_dfl_wq, &bcdev->thermal_guard_work, msecs_to_jiffies(bcdev->usb_in_status ? 5000 : 200));
 	// oplus_quirks_notify_plugin(bcdev->usb_in_status);
 	// oplus_chg_track_check_wired_charging_break(usb_plugin_status);
@@ -1157,6 +1175,7 @@ static void oplus_cancel_rt_work(void *data)
 	cancel_work_sync(&bcdev->vooc_suspend_work);
 	cancel_work_sync(&bcdev->usb_unsuspend_work);
 	cancel_delayed_work_sync(&bcdev->thermal_guard_work);
+	cancel_delayed_work_sync(&bcdev->plain_chg_work);
 	cancel_delayed_work_sync(&bcdev->otg_role_bounce_work);
 }
 
@@ -1278,6 +1297,7 @@ static void oplus_adsp_voocphy_err_work(struct work_struct *work)
 			smbchg_usb_suspend_disable(battmgr);
 			smbchg_charging_enable(battmgr);
 			oplus_adsp_voocphy_reset_again(battmgr);
+			mod_delayed_work(system_dfl_wq, &bcdev->plain_chg_work, msecs_to_jiffies(3000));
 		// }
 	}
 }
@@ -1333,6 +1353,34 @@ static void oplus_thermal_guard_work(struct work_struct *work)
 	}
 again:
 	queue_delayed_work(system_dfl_wq, &bcdev->thermal_guard_work, msecs_to_jiffies(5000));
+}
+
+static void oplus_plain_chg_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev, plain_chg_work.work);
+	struct qcom_battmgr *battmgr = bcdev->battmgr;
+	u32 icl_ua = plain_icl_ma * 1000;
+	int ret;
+
+	if (!bcdev->usb_in_status || bcdev->adsp_voocphy_err_check || bcdev->pd_svooc)
+		return;
+	if (oplus_battmgr_request_property(battmgr, BC_USB_STATUS_GET, USB_VOLT_NOW, 0))
+		return;
+	if (battmgr->usb.voltage_now > 7000000) {
+		chg_err("plain chg: vbus %u uV, fast charge, leave alone\n", (unsigned int)battmgr->usb.voltage_now);
+		return;
+	}
+	if (!oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_GET, BATT_TEMP, 0) &&
+	    (int)battmgr->status.temperature >= guard_hot_dc)
+		return;
+	oplus_battmgr_request_property(battmgr, BC_USB_STATUS_GET, USB_ADAP_TYPE, 0);
+	if (battmgr->usb.usb_type == POWER_SUPPLY_USB_TYPE_SDP)
+		icl_ua = 500000;
+	ret = oplus_battmgr_request_property(battmgr, BC_USB_STATUS_SET, USB_INPUT_CURR_LIMIT, icl_ua);
+	if (!ret && battmgr->usb.usb_type != POWER_SUPPLY_USB_TYPE_SDP)
+		ret = oplus_battmgr_request_property(battmgr, BC_BATTERY_STATUS_SET, BATT_CHG_CTRL_LIM, plain_fcc_ma * 1000);
+	chg_err("plain chg: type %u vbus %u uV icl %u uA fcc %u mA ret=%d\n", battmgr->usb.usb_type,
+		(unsigned int)battmgr->usb.voltage_now, icl_ua, plain_fcc_ma, ret);
 }
 
 static struct power_supply_desc usb_psy_desc;
@@ -2511,6 +2559,7 @@ static int oplus_battmgr_probe(struct auxiliary_device *adev,
 	// INIT_DELAYED_WORK(&bcdev->vbus_adc_enable_work, oplus_vbus_enable_adc_work);
 	INIT_DELAYED_WORK(&bcdev->adsp_voocphy_err_work, oplus_adsp_voocphy_err_work);
 	INIT_DELAYED_WORK(&bcdev->thermal_guard_work, oplus_thermal_guard_work);
+	INIT_DELAYED_WORK(&bcdev->plain_chg_work, oplus_plain_chg_work);
 	// INIT_DELAYED_WORK(&bcdev->oem_lcm_en_check_work, oplus_oem_lcm_en_check_work);
 	// INIT_DELAYED_WORK(&bcdev->voocphy_err_work, oplus_voocphy_err_work);
 	// INIT_DELAYED_WORK(&bcdev->ctrl_lcm_frequency, oplus_chg_ctrl_lcm_work);
